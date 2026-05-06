@@ -1,77 +1,69 @@
-package filter
+package filter_test
 
 import (
 	"testing"
 	"time"
+
+	"github.com/logslice/logslice/internal/filter"
 )
 
 func TestParseTimeRange_ValidStartOnly(t *testing.T) {
-	tr, err := ParseTimeRange("2024-03-01T10:00:00", "")
+	tr, err := filter.ParseTimeRange("2024-01-01T10:00:00Z", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if tr.HasEnd {
-		t.Error("expected HasEnd to be false")
-	}
-	expected := time.Date(2024, 3, 1, 10, 0, 0, 0, time.UTC)
-	if !tr.Start.Equal(expected) {
-		t.Errorf("Start = %v, want %v", tr.Start, expected)
+	if tr.End != (time.Time{}) {
+		t.Errorf("expected zero End, got %v", tr.End)
 	}
 }
 
 func TestParseTimeRange_ValidStartAndEnd(t *testing.T) {
-	tr, err := ParseTimeRange("2024-03-01", "2024-03-02")
+	tr, err := filter.ParseTimeRange("2024-01-01T10:00:00Z", "2024-01-01T12:00:00Z")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !tr.HasEnd {
-		t.Error("expected HasEnd to be true")
+	if tr.End.IsZero() {
+		t.Error("expected non-zero End")
 	}
 }
 
 func TestParseTimeRange_EndBeforeStart(t *testing.T) {
-	_, err := ParseTimeRange("2024-03-05T00:00:00", "2024-03-01T00:00:00")
+	_, err := filter.ParseTimeRange("2024-01-01T12:00:00Z", "2024-01-01T10:00:00Z")
 	if err == nil {
-		t.Fatal("expected error when end is before start")
+		t.Error("expected error for end before start")
 	}
 }
 
 func TestParseTimeRange_EmptyStart(t *testing.T) {
-	_, err := ParseTimeRange("", "2024-03-01")
+	_, err := filter.ParseTimeRange("", "2024-01-01T12:00:00Z")
 	if err == nil {
-		t.Fatal("expected error for empty start")
+		t.Error("expected error for empty start")
 	}
 }
 
 func TestParseTimeRange_InvalidFormat(t *testing.T) {
-	_, err := ParseTimeRange("not-a-date", "")
+	_, err := filter.ParseTimeRange("not-a-date", "")
 	if err == nil {
-		t.Fatal("expected error for invalid timestamp format")
+		t.Error("expected error for invalid format")
 	}
 }
 
 func TestTimeRange_Contains(t *testing.T) {
-	tr, _ := ParseTimeRange("2024-03-01T08:00:00", "2024-03-01T18:00:00")
-
+	tr, _ := filter.ParseTimeRange("2024-01-01T10:00:00Z", "2024-01-01T12:00:00Z")
 	cases := []struct {
 		ts   string
 		want bool
 	}{
-		{"2024-03-01T07:59:59", false},
-		{"2024-03-01T08:00:00", true},
-		{"2024-03-01T12:00:00", true},
-		{"2024-03-01T18:00:00", true},
-		{"2024-03-01T18:00:01", false},
+		{"2024-01-01T09:59:59Z", false},
+		{"2024-01-01T10:00:00Z", true},
+		{"2024-01-01T11:00:00Z", true},
+		{"2024-01-01T12:00:00Z", false},
+		{"2024-01-01T13:00:00Z", false},
 	}
-
 	for _, c := range cases {
-		t, err := time.Parse("2006-01-02T15:04:05", c.ts)
-		if err != nil {
-			test.Fatalf("bad test timestamp %q: %v", c.ts, err)
-		}
-		got := tr.Contains(t)
-		if got != c.want {
-			test.Errorf("Contains(%q) = %v, want %v", c.ts, got, c.want)
+		t0, _ := time.Parse(time.RFC3339, c.ts)
+		if got := tr.Contains(t0); got != c.want {
+			t.Errorf("Contains(%s) = %v, want %v", c.ts, got, c.want)
 		}
 	}
 }

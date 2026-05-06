@@ -1,45 +1,16 @@
 package filter
 
 import (
+	"errors"
 	"fmt"
 	"time"
 )
 
-// TimeRange represents an inclusive start and optional end time window
-// used to filter log lines by timestamp.
+// TimeRange represents an inclusive start / exclusive-end time window.
+// End is optional; a zero End means "no upper bound".
 type TimeRange struct {
 	Start time.Time
 	End   time.Time
-	HasEnd bool
-}
-
-// ParseTimeRange parses start and end timestamp strings into a TimeRange.
-// Supported layout: "2006-01-02T15:04:05", "2006-01-02 15:04:05", "2006-01-02".
-func ParseTimeRange(start, end string) (*TimeRange, error) {
-	if start == "" {
-		return nil, fmt.Errorf("start time must not be empty")
-	}
-
-	s, err := parseTimestamp(start)
-	if err != nil {
-		return nil, fmt.Errorf("invalid start time %q: %w", start, err)
-	}
-
-	tr := &TimeRange{Start: s}
-
-	if end != "" {
-		e, err := parseTimestamp(end)
-		if err != nil {
-			return nil, fmt.Errorf("invalid end time %q: %w", end, err)
-		}
-		if e.Before(s) {
-			return nil, fmt.Errorf("end time %q must not be before start time %q", end, start)
-		}
-		tr.End = e
-		tr.HasEnd = true
-	}
-
-	return tr, nil
 }
 
 // Contains reports whether t falls within the time range.
@@ -47,24 +18,50 @@ func (tr *TimeRange) Contains(t time.Time) bool {
 	if t.Before(tr.Start) {
 		return false
 	}
-	if tr.HasEnd && t.After(tr.End) {
+	if !tr.End.IsZero() && !t.Before(tr.End) {
 		return false
 	}
 	return true
 }
 
-var timestampLayouts = []string{
+// supportedLayouts lists the timestamp formats tried in order.
+var supportedLayouts = []string{
 	time.RFC3339,
 	"2006-01-02T15:04:05",
 	"2006-01-02 15:04:05",
 	"2006-01-02",
 }
 
+// parseTimestamp attempts to parse s using each supported layout.
 func parseTimestamp(s string) (time.Time, error) {
-	for _, layout := range timestampLayouts {
+	for _, layout := range supportedLayouts {
 		if t, err := time.Parse(layout, s); err == nil {
 			return t, nil
 		}
 	}
-	return time.Time{}, fmt.Errorf("unrecognised timestamp format")
+	return time.Time{}, fmt.Errorf("unrecognised timestamp format: %q", s)
+}
+
+// ParseTimeRange builds a TimeRange from string representations of start and
+// (optionally) end timestamps. start must not be empty.
+func ParseTimeRange(start, end string) (*TimeRange, error) {
+	if start == "" {
+		return nil, errors.New("start timestamp is required")
+	}
+	s, err := parseTimestamp(start)
+	if err != nil {
+		return nil, fmt.Errorf("invalid start: %w", err)
+	}
+	tr := &TimeRange{Start: s}
+	if end != "" {
+		e, err := parseTimestamp(end)
+		if err != nil {
+			return nil, fmt.Errorf("invalid end: %w", err)
+		}
+		if !e.After(s) {
+			return nil, errors.New("end timestamp must be after start timestamp")
+		}
+		tr.End = e
+	}
+	return tr, nil
 }
