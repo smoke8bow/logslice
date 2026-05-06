@@ -88,3 +88,17 @@ func TestPatternFilter_EmptyStringPatterns(t *testing.T) {
 		t.Error("expected HasFilters false when only blank patterns provided")
 	}
 }
+
+func TestPatternFilter_CaseSensitivity(t *testing.T) {
+	pf, err := NewPatternFilter([]string{"error"}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !pf.Match("error: something failed") {
+		t.Error("expected match for lowercase 'error'")
+	}
+	if pf.Match("ERROR: something failed") {
+		t.Error("expected no match for uppercase 'ERROR' when pattern is lowercase")
+	}
+}
