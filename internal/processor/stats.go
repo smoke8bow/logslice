@@ -2,41 +2,48 @@ package processor
 
 import (
 	"fmt"
-	"io"
+	"sync/atomic"
 	"time"
 )
 
-// Stats holds counters collected during a pipeline or parallel run.
+// Stats tracks processing metrics for a pipeline run.
 type Stats struct {
-	LinesRead    int64
-	LinesWritten int64
-	LinesDropped int64
-	Duration     time.Duration
+	LinesRead     atomic.Int64
+	LinesMatched  atomic.Int64
+	LinesDropped  atomic.Int64
+	BytesRead     atomic.Int64
+	StartTime     time.Time
+	EndTime       time.Time
 }
 
-// PassRate returns the percentage of lines that passed all filters.
-func (s *Stats) PassRate() float64 {
-	if s.LinesRead == 0 {
-		return 0
+// NewStats creates a new Stats instance with the start time set.
+func NewStats() *Stats {
+	return &Stats{
+		StartTime: time.Now(),
 	}
-	return float64(s.LinesWritten) / float64(s.LinesRead) * 100
 }
 
-// Print writes a human-readable summary of the stats to w.
-func (s *Stats) Print(w io.Writer) {
-	fmt.Fprintf(w, "Lines read:    %d\n", s.LinesRead)
-	fmt.Fprintf(w, "Lines written: %d\n", s.LinesWritten)
-	fmt.Fprintf(w, "Lines dropped: %d\n", s.LinesDropped)
-	fmt.Fprintf(w, "Pass rate:     %.1f%%\n", s.PassRate())
-	fmt.Fprintf(w, "Duration:      %s\n", s.Duration.Round(time.Millisecond))
+// Finish marks the end time of processing.
+func (s *Stats) Finish() {
+	s.EndTime = time.Now()
 }
 
-// Merge combines another Stats into this one (for aggregating worker results).
-func (s *Stats) Merge(other Stats) {
-	s.LinesRead += other.LinesRead
-	s.LinesWritten += other.LinesWritten
-	s.LinesDropped += other.LinesDropped
-	if other.Duration > s.Duration {
-		s.Duration = other.Duration
+// Duration returns the elapsed processing time.
+func (s *Stats) Duration() time.Duration {
+	if s.EndTime.IsZero() {
+		return time.Since(s.StartTime)
 	}
+	return s.EndTime.Sub(s.StartTime)
+}
+
+// Summary returns a human-readable summary string.
+func (s *Stats) Summary() string {
+	return fmt.Sprintf(
+		"lines_read=%d lines_matched=%d lines_dropped=%d bytes_read=%d duration=%s",
+		s.LinesRead.Load(),
+		s.LinesMatched.Load(),
+		s.LinesDropped.Load(),
+		s.BytesRead.Load(),
+		s.Duration().Round(time.Millisecond),
+	)
 }
