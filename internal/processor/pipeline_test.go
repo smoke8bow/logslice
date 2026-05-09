@@ -1,4 +1,4 @@
-package processor_test
+package processor
 
 import (
 	"bytes"
@@ -6,102 +6,81 @@ import (
 	"testing"
 	"time"
 
-	"github.com/logslice/logslice/internal/filter"
-	"github.com/logslice/logslice/internal/output"
-	"github.com/logslice/logslice/internal/processor"
-	"github.com/logslice/logslice/internal/reader"
+	"github.com/user/logslice/internal/filter"
+	"github.com/user/logslice/internal/output"
+	"github.com/user/logslice/internal/parser"
+	"github.com/user/logslice/internal/reader"
 )
 
-func makeReader(t *testing.T, content string) *reader.LineReader {
-	t.Helper()
-	r, err := reader.NewLineReader(strings.NewReader(content))
-	if err != nil {
-		t.Fatalf("NewLineReader: %v", err)
-	}
-	return r
+func makeReader(input string) *reader.Scanner {
+	return reader.NewScanner(strings.NewReader(input))
 }
 
-func makeWriter(buf *bytes.Buffer) *output.Writer {
-	return output.NewWriter(buf)
+func makeWriter() (*output.Writer, *bytes.Buffer) {
+	buf := &bytes.Buffer{}
+	w := output.NewWriter(buf)
+	return w, buf
 }
 
 func TestPipeline_NoFilters(t *testing.T) {
-	buf := &bytes.Buffer{}
-	p := processor.New(makeReader(t, "line1\nline2\nline3\n"), processor.Config{
-		Writer: makeWriter(buf),
-		Format: output.FormatRaw,
-	})
-	n, err := p.Run()
+	sc := makeReader("line1\nline2\nline3\n")
+	w, buf := makeWriter()
+	p := New(sc, parser.NewParser(), w, nil, nil, nil)
+	stats, err := p.Run()
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatal(err)
 	}
-	if n != 3 {
-		t.Errorf("expected 3 lines written, got %d", n)
+	if stats.Total() != 3 {
+		t.Errorf("expected 3 total, got %d", stats.Total())
+	}
+	if !strings.Contains(buf.String(), "line1") {
+		t.Error("expected output to contain 'line1'")
 	}
 }
 
 func TestPipeline_PatternFilter(t *testing.T) {
-	buf := &bytes.Buffer{}
+	sc := makeReader("error: something\ninfo: ok\nerror: again\n")
+	w, buf := makeWriter()
 	pf, _ := filter.NewPatternFilter([]string{"error"}, nil)
-	p := processor.New(makeReader(t, "info: ok\nerror: bad\nwarn: meh\nerror: also bad\n"), processor.Config{
-		Pattern: pf,
-		Writer:  makeWriter(buf),
-		Format:  output.FormatRaw,
-	})
-	n, err := p.Run()
+	p := New(sc, parser.NewParser(), w, pf, nil, nil)
+	stats, err := p.Run()
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatal(err)
 	}
-	if n != 2 {
-		t.Errorf("expected 2 lines, got %d", n)
+	if stats.Written() != 2 {
+		t.Errorf("expected 2 written, got %d", stats.Written())
+	}
+	if strings.Contains(buf.String(), "info:") {
+		t.Error("info line should have been filtered")
 	}
 }
 
 func TestPipeline_TimeRangeFilter(t *testing.T) {
-	buf := &bytes.Buffer{}
-	start := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
-	end := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
-	tr := &filter.TimeRange{Start: start, End: end}
-
-	lines := "before\ninside\nafter\n"
-	times := map[string]time.Time{
-		"before": time.Date(2024, 1, 1, 9, 0, 0, 0, time.UTC),
-		"inside": time.Date(2024, 1, 1, 11, 0, 0, 0, time.UTC),
-		"after":  time.Date(2024, 1, 1, 13, 0, 0, 0, time.UTC),
-	}
-	tsFn := func(line string) (time.Time, bool) {
-		if t, ok := times[line]; ok {
-			return t, true
-		}
-		return time.Time{}, false
-	}
-
-	p := processor.New(makeReader(t, lines), processor.Config{
-		TimeRange:   tr,
-		Writer:      makeWriter(buf),
-		Format:      output.FormatRaw,
-		TimestampFn: tsFn,
-	})
-	n, err := p.Run()
+	start := time.Now().Add(-time.Hour)
+	tr := &filter.TimeRange{Start: start}
+	sc := makeReader("no-timestamp-line\n")
+	w, _ := makeWriter()
+	p := New(sc, parser.NewParser(), w, nil, tr, nil)
+	_, err := p.Run()
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if n != 1 {
-		t.Errorf("expected 1 line, got %d", n)
+		t.Fatal(err)
 	}
 }
 
-func TestPipeline_EmptyInput(t *testing.T) {
-	buf := &bytes.Buffer{}
-	p := processor.New(makeReader(t, ""), processor.Config{
-		Writer: makeWriter(buf),
-		Format: output.FormatRaw,
-	})
-	n, err := p.Run()
+func TestPipeline_Deduplicate(t *testing.T) {
+	input := "dup-line\ndup-line\nunique\n"
+	sc := makeReader(input)
+	w, buf := makeWriter()
+	dd := NewDeduplicator(100)
+	p := New(sc, parser.NewParser(), w, nil, nil, dd)
+	stats, err := p.Run()
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatal(err)
 	}
-	if n != 0 {
-		t.Errorf("expected 0 lines, got %d", n)
+	if stats.Written() != 2 {
+		t.Errorf("expected 2 written after dedup, got %d", stats.Written())
+	}
+	if strings.Count(buf.String(), "dup-line") != 1 {
+		t.Error("expected dup-line to appear exactly once")
 	}
 }

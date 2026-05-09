@@ -6,44 +6,61 @@ import (
 	"time"
 )
 
-// Stats tracks processing metrics for a pipeline run.
+// Stats tracks pipeline processing counters and timing.
 type Stats struct {
-	LinesRead     atomic.Int64
-	LinesMatched  atomic.Int64
-	LinesDropped  atomic.Int64
-	BytesRead     atomic.Int64
-	StartTime     time.Time
-	EndTime       time.Time
+	total   int64
+	skipped int64
+	written int64
+	start   time.Time
+	end     time.Time
 }
 
-// NewStats creates a new Stats instance with the start time set.
+// NewStats initialises a Stats instance with the current time.
 func NewStats() *Stats {
-	return &Stats{
-		StartTime: time.Now(),
-	}
+	return &Stats{start: time.Now()}
 }
 
-// Finish marks the end time of processing.
+// Inc increments the total lines seen counter.
+func (s *Stats) Inc() {
+	atomic.AddInt64(&s.total, 1)
+}
+
+// Skip increments the skipped lines counter.
+func (s *Stats) Skip() {
+	atomic.AddInt64(&s.skipped, 1)
+}
+
+// Write increments the written lines counter.
+func (s *Stats) Write() {
+	atomic.AddInt64(&s.written, 1)
+}
+
+// Finish records the end time.
 func (s *Stats) Finish() {
-	s.EndTime = time.Now()
+	s.end = time.Now()
 }
 
-// Duration returns the elapsed processing time.
+// Total returns total lines processed.
+func (s *Stats) Total() int64 { return atomic.LoadInt64(&s.total) }
+
+// Skipped returns total lines skipped.
+func (s *Stats) Skipped() int64 { return atomic.LoadInt64(&s.skipped) }
+
+// Written returns total lines written.
+func (s *Stats) Written() int64 { return atomic.LoadInt64(&s.written) }
+
+// Duration returns elapsed time. If Finish has not been called, returns time since start.
 func (s *Stats) Duration() time.Duration {
-	if s.EndTime.IsZero() {
-		return time.Since(s.StartTime)
+	if s.end.IsZero() {
+		return time.Since(s.start)
 	}
-	return s.EndTime.Sub(s.StartTime)
+	return s.end.Sub(s.start)
 }
 
 // Summary returns a human-readable summary string.
 func (s *Stats) Summary() string {
 	return fmt.Sprintf(
-		"lines_read=%d lines_matched=%d lines_dropped=%d bytes_read=%d duration=%s",
-		s.LinesRead.Load(),
-		s.LinesMatched.Load(),
-		s.LinesDropped.Load(),
-		s.BytesRead.Load(),
-		s.Duration().Round(time.Millisecond),
+		"total=%d written=%d skipped=%d duration=%s",
+		s.Total(), s.Written(), s.Skipped(), s.Duration().Round(time.Millisecond),
 	)
 }
