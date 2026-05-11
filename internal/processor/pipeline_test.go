@@ -84,3 +84,24 @@ func TestPipeline_Deduplicate(t *testing.T) {
 		t.Error("expected dup-line to appear exactly once")
 	}
 }
+
+func TestPipeline_StatsFiltered(t *testing.T) {
+	// Verify that stats.Filtered() correctly reflects lines excluded by the pattern filter.
+	sc := makeReader("error: one\nwarn: two\nerror: three\ninfo: four\n")
+	w, _ := makeWriter()
+	pf, _ := filter.NewPatternFilter([]string{"error"}, nil)
+	p := New(sc, parser.NewParser(), w, pf, nil, nil)
+	stats, err := p.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.Total() != 4 {
+		t.Errorf("expected 4 total, got %d", stats.Total())
+	}
+	if stats.Written() != 2 {
+		t.Errorf("expected 2 written, got %d", stats.Written())
+	}
+	if stats.Filtered() != 2 {
+		t.Errorf("expected 2 filtered, got %d", stats.Filtered())
+	}
+}
