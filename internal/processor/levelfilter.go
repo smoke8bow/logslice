@@ -29,6 +29,24 @@ var levelNames = map[string]Level{
 	"crit":  LevelFatal,
 }
 
+// levelStrings maps each canonical Level back to a human-readable name.
+var levelStrings = map[Level]string{
+	LevelDebug:   "debug",
+	LevelInfo:    "info",
+	LevelWarn:    "warn",
+	LevelError:   "error",
+	LevelFatal:   "fatal",
+	LevelUnknown: "unknown",
+}
+
+// String returns the canonical name of the level (e.g. "info", "error").
+func (l Level) String() string {
+	if s, ok := levelStrings[l]; ok {
+		return s
+	}
+	return "unknown"
+}
+
 // ParseLevel converts a string to a Level. Returns LevelUnknown if unrecognised.
 func ParseLevel(s string) Level {
 	if l, ok := levelNames[strings.ToLower(strings.TrimSpace(s))]; ok {
