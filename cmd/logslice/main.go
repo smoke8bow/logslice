@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/yourorg/logslice/internal/config"
-	"github.com/yourorg/logslice/internal/filter"
-	"github.com/yourorg/logslice/internal/output"
-	"github.com/yourorg/logslice/internal/processor"
-	"github.com/yourorg/logslice/internal/reader"
+	"github.com/user/logslice/internal/config"
+	"github.com/user/logslice/internal/filter"
+	"github.com/user/logslice/internal/output"
+	"github.com/user/logslice/internal/processor"
+	"github.com/user/logslice/internal/reader"
 )
 
 func main() {
@@ -24,51 +24,58 @@ func run(args []string) error {
 		return err
 	}
 
-	// Build time range filter (optional).
-	var timeRange *filter.TimeRange
+	var opts []processor.Option
+
 	if cfg.Start != "" || cfg.End != "" {
 		tr, err := filter.ParseTimeRange(cfg.Start, cfg.End)
 		if err != nil {
 			return fmt.Errorf("time range: %w", err)
 		}
-		timeRange = tr
+		opts = append(opts, processor.WithTimeRange(tr))
 	}
 
-	// Build pattern filter (optional).
-	var patFilter *filter.PatternFilter
-	if len(cfg.Include) > 0 || len(cfg.Exclude) > 0 {
+	if cfg.Include != "" || cfg.Exclude != "" {
 		pf, err := filter.NewPatternFilter(cfg.Include, cfg.Exclude)
 		if err != nil {
 			return fmt.Errorf("pattern filter: %w", err)
 		}
-		patFilter = pf
+		opts = append(opts, processor.WithPatternFilter(pf))
 	}
 
-	// Open input.
-	lr, err := reader.NewLineReader(cfg.InputFile)
-	if err != nil {
-		return fmt.Errorf("open input: %w", err)
-	}
-	defer lr.Close()
-
-	// Open output.
-	var w *output.Writer
-	if cfg.OutputFile != "" {
-		w, err = output.NewFileWriter(cfg.OutputFile)
+	if cfg.RateLimit > 0 {
+		rl, err := processor.NewRateLimiter(cfg.RateLimit)
 		if err != nil {
-			return fmt.Errorf("open output: %w", err)
+			return fmt.Errorf("rate limit: %w", err)
 		}
-		defer w.Close()
-	} else {
-		w = output.NewWriter(os.Stdout)
+		opts = append(opts, processor.WithRateLimiter(rl))
 	}
 
 	fmt, err := output.ParseFormat(cfg.Format)
 	if err != nil {
-		return err
+		return fmt.Errorf("output format: %w", err)
 	}
 
-	// Run pipeline.
-	p := processor.New(lr, w, fmt, timeRange, patFilter)
-	return p.Run()
+	w, err := output.NewFileWriter(cfg.Output, fmt)
+	if err != nil {
+		return fmt.Errorf("output writer: %w", err)
+	}
+	defer w.Close()
+
+	if cfg.Workers > 1 {
+		return processor.RunParallel(cfg.Input, w, cfg.Workers, opts...)
+	}
+
+	r, err := reader.NewLineReader(cfg.Input)
+	if err != nil {
+		return fmt.Errorf("open input: %w", err)
+	}
+	defer r.Close()
+
+	pipe := processor.New(r, w, opts...)
+	stats := processor.NewStats()
+	if err := pipe.Run(stats); err != nil {
+		return err
+	}
+	fmt.Fprintln(os.Stderr, stats.Summary())
+	return nil
 }
