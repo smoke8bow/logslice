@@ -102,3 +102,16 @@ func TestTransformer_DoesNotMutateOriginal(t *testing.T) {
 		t.Error("original fields map was mutated")
 	}
 }
+
+// TestTransformer_RawPreserved verifies that Apply does not modify the Raw
+// field of the log line regardless of which transform is applied.
+func TestTransformer_RawPreserved(t *testing.T) {
+	for _, name := range []string{"upper", "lower", "trim", "urlencode"} {
+		tr, _ := NewTransformer("msg", name)
+		line := makeTransformLine(map[string]interface{}{"msg": "hello"})
+		out := tr.Apply(line)
+		if out.Raw != line.Raw {
+			t.Errorf("transform %q modified Raw field: got %q, want %q", name, out.Raw, line.Raw)
+		}
+	}
+}
