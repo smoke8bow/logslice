@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"log"
 	"sync"
 
 	"github.com/yourorg/logslice/internal/filter"
@@ -73,6 +74,7 @@ func (wp *WorkerPool) Run(jobs []Job) {
 func (wp *WorkerPool) processJob(job Job) {
 	r, err := reader.NewLineReaderAt(job.FilePath, job.Offset)
 	if err != nil {
+		log.Printf("worker: failed to open %q at offset %d: %v", job.FilePath, job.Offset, err)
 		return
 	}
 	defer r.Close()
