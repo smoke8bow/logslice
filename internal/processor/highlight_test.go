@@ -95,3 +95,15 @@ func TestHighlighter_PreservesOtherFields(t *testing.T) {
 		t.Errorf("expected fields preserved, got: %v", out.Fields)
 	}
 }
+
+func TestHighlighter_EmptyLine(t *testing.T) {
+	h, err := NewHighlighter([]string{"error"}, "red")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out := h.Apply(makeHighlightLine(""))
+	if out.Raw != "" {
+		t.Errorf("expected empty line to remain empty, got: %q", out.Raw)
+	}
+}
