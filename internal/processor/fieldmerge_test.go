@@ -99,3 +99,18 @@ func TestFieldMerger_MissingSourcesSkipped(t *testing.T) {
 		t.Error("expected 'z' not to be set when sources are missing")
 	}
 }
+
+// TestFieldMerger_PartialSourcesSkipped verifies that when only a subset of
+// source fields are present the merge is skipped and no destination is written.
+func TestFieldMerger_PartialSourcesSkipped(t *testing.T) {
+	fm, _ := NewFieldMerger([]string{"first", "last"}, "full_name", " ", false)
+	line := makeMergeLine(map[string]interface{}{"first": "OnlyFirst"})
+	out, keep := fm.Process(line)
+	if !keep {
+		t.Fatal("expected line to be kept")
+	}
+	// Only one of the two source fields is present; dest should not be set.
+	if _, ok := out.Fields["full_name"]; ok {
+		t.Error("expected 'full_name' not to be set when only partial sources are present")
+	}
+}
